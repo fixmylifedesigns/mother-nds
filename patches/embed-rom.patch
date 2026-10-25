@@ -1,0 +1,93 @@
+diff --git a/arm9/include/equates.h b/arm9/include/equates.h
+index 02f7bd7..56aca3d 100755
+--- a/arm9/include/equates.h
++++ b/arm9/include/equates.h
+@@ -9,5 +9,5 @@ DEBUGSTEP	= 0
+ 
+ wram = NES_DRAM	//64k ram is reserved here.
+-ROM_MAX_SIZE = 0x280000		//2,5MB free rom space
++ROM_MAX_SIZE = 0x200000		//2MB free rom space (0x80000 went to the embedded rom slot)
+ MAXFILES	 = 1024
+ 
+diff --git a/arm9/source/arm9main.c b/arm9/source/arm9main.c
+index 3813950..b50b4fe 100755
+--- a/arm9/source/arm9main.c
++++ b/arm9/source/arm9main.c
+@@ -147,5 +147,8 @@ int main(int _argc, char **_argv) {
+ 	if(!bootext()) {
+ 		//chdir("/");
+-		do_rommenu(); //show a menu selecting rom files.
++		if (load_embedded_rom())
++			hideconsole();
++		else
++			do_rommenu(); //show a menu selecting rom files.
+ 	} else {
+ 		hideconsole();
+diff --git a/arm9/source/romloader.c b/arm9/source/romloader.c
+index 7cb8a53..17c370f 100755
+--- a/arm9/source/romloader.c
++++ b/arm9/source/romloader.c
+@@ -475,4 +475,46 @@ int keystr2int(const char *buf)
+ }
+ 
++//A rom slot inside the arm9 binary. It ships empty; tools/embed_rom.py (or the web patcher)
++//writes a rom into the finished .nds, which then boots straight into that game.
++//Layout: 16 byte magic, u32 rom size (0 = empty), 44 byte file name, then the rom.
++#define EMBED_HEADER_SIZE 64
++#define EMBED_SLOT_SIZE 0x80000
++__attribute__((aligned(4))) const volatile u8 embedded_rom_slot[EMBED_HEADER_SIZE + EMBED_SLOT_SIZE] = "NESDS-EMBED-SLOT";
++
++/*****************************
++* name:         load_embedded_rom
++* function:     boot the rom stored in embedded_rom_slot, if any.
++* description:  returns 1 when a rom was loaded, 0 when the slot is empty.
++*****************************/
++int load_embedded_rom() {
++	u32 size = embedded_rom_slot[16] | (embedded_rom_slot[17] << 8) | (embedded_rom_slot[18] << 16) | (embedded_rom_slot[19] << 24);
++	if (size < 16 || size > EMBED_SLOT_SIZE)
++		return 0;
++
++	char *roms = (char *)rom_start;
++	memcpy(roms, (const void *)(embedded_rom_slot + EMBED_HEADER_SIZE), size);
++
++	//the name is used for the .sav file next to the .nds (when a card filesystem is available)
++	int n = 0;
++	for (; n < 43 && embedded_rom_slot[20 + n]; n++)
++		romfilename[n] = embedded_rom_slot[20 + n];
++	romfilename[n] = 0;
++	if (n == 0 || !strrchr(romfilename, '.'))
++		strcpy(romfilename + n, n ? ".nes" : "embedded.nes");
++	romfileext = strrchr(romfilename, '.') + 1;
++
++	romsize = size;
++	if (size < 0x100000)
++		size = 0x100000;
++	freemem_start = ((u32)roms + size + 3) & ~3;
++	freemem_end = (u32)roms + ROM_MAX_SIZE;
++
++	romcorrect(roms);
++	initcart(roms);
++	IPC_MAPPER = globals.mapperNr;
++	load_sram();
++	return 1;
++}
++
+ int bootext() {
+ 	// interrupt 0: set my dir (inibuf)
+diff --git a/include/c_defs.h b/include/c_defs.h
+index 5999d47..62d0078 100755
+--- a/include/c_defs.h
++++ b/include/c_defs.h
+@@ -9,5 +9,5 @@
+ 
+ #define MAX_IPS_SIZE 0x80000		//actually, the ips file won't be larger than 512kB.
+-#define ROM_MAX_SIZE 0x280000		//2,5MB free rom space
++#define ROM_MAX_SIZE 0x200000		//2MB free rom space (0x80000 went to the embedded rom slot)
+ #define MAXFILES 1024
+ 
+@@ -113,4 +113,5 @@ int debugdump(void);
+ extern int romsize;
+ int bootext();
++int load_embedded_rom();
+ extern int active_interface;
+ extern char romfilename[256];
