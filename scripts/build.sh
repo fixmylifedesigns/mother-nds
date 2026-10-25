@@ -11,6 +11,8 @@ rm -rf "$SRC" && mkdir -p "$(dirname "$SRC")" "$DIST"
 git clone -q https://github.com/DS-Homebrew/nesDS.git "$SRC"
 cd "$SRC"
 git checkout -q "$UPSTREAM_COMMIT"
+# the 6502 core (arm9/source/RP2A03) is a submodule
+git submodule update --init --recursive
 patch -p1 -l --forward --no-backup-if-mismatch < "$ROOT/patches/embed-rom.patch"
 
 make
