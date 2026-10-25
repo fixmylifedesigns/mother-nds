@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:20241104
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install patch
+        run: apt-get update && apt-get install -y patch
+
+      - name: Build nesDS with the rom slot
+        run: |
+          git config --global safe.directory '*'
+          bash scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nesDS-embed
+          path: dist/*.nds
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: nesDS embed build ${{ github.run_number }}
+          files: dist/nesDS-embed.nds
+          body: Empty nesDS with a ROM slot. Add your own ROM with the web patcher or tools/embed_rom.py (see the README).
